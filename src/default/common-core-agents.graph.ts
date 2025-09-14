@@ -3,7 +3,7 @@ import { agent, agentGraph, mcpTool } from '@inkeep/agents-sdk';
 // MCP servers (URLs come from environment with localhost fallbacks)
 const COMMON_CORE_STANDARDS_URL = 'http://localhost:4311/mcp';
 const CLASSROOM_MCP_URL = 'http://localhost:4312/mcp';
-const ARTWORKS_GEN_URL = 'http://localhost:4313/mcp';
+const VISUALS_MCP_URL = 'http://localhost:4313/mcp';
 
 // Tool connectors (scoped per agent via activeTools)
 const standardsTools = mcpTool({
@@ -41,17 +41,17 @@ const visionGraderTool = mcpTool({
   activeTools: ['vision_grade_from_images'],
 });
 
-const artworksPickTool = mcpTool({
-  id: 'artworks-pick',
-  name: 'Artworks Gen MCP — Pick Prompt',
-  serverUrl: ARTWORKS_GEN_URL,
+const visualsPickTool = mcpTool({
+  id: 'visuals-pick',
+  name: 'Visuals MCP — Pick Prompt',
+  serverUrl: VISUALS_MCP_URL,
   activeTools: ['pick_nano_banana_prompt'],
 });
 
-const artworksGenerateTool = mcpTool({
-  id: 'artworks-generate',
-  name: 'Artworks Gen MCP — Generate Image',
-  serverUrl: ARTWORKS_GEN_URL,
+const visualsGenerateTool = mcpTool({
+  id: 'visuals-generate',
+  name: 'Visuals MCP — Generate Image',
+  serverUrl: VISUALS_MCP_URL,
   activeTools: ['generate_nano_banana_image'],
 });
 
@@ -130,7 +130,7 @@ Steps:
 2) Propose 1 best prompt (short, vivid). If 'bw', enforce black-and-white, line-art, bold outlines, printable.
 3) Offer 2 quick variants.
  Return a concise plan and the exact chosen prompt. Use pick_nano_banana_prompt to select a template; on approval, call generate_nano_banana_image.`,
-  canUse: () => [artworksPickTool, artworksGenerateTool],
+  canUse: () => [visualsPickTool, visualsGenerateTool],
 });
 
 // Graph (router-only baseline)
