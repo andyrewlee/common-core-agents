@@ -1,6 +1,6 @@
 import { agent, agentGraph, mcpTool } from '@inkeep/agents-sdk';
 
-// MCP servers (URLs come from environment with localhost fallbacks)
+// MCP servers
 const COMMON_CORE_STANDARDS_URL = 'http://localhost:4311/mcp';
 const CLASSROOM_MCP_URL = 'http://localhost:4312/mcp';
 const VISUALS_MCP_URL = 'http://localhost:4313/mcp';
@@ -10,58 +10,69 @@ const standardsTools = mcpTool({
   id: 'edu-standards',
   name: 'Common Core Standards MCP',
   serverUrl: COMMON_CORE_STANDARDS_URL,
+  transport: { type: 'streamable_http' },
   activeTools: ['list_jurisdictions', 'get_standard_set_by_id'],
 });
 
-const visionAnswerKeyTool = mcpTool({
-  id: 'edu-vision-answer-key',
+// Classroom MCP split into per-agent connectors (least-privilege)
+const classroomAnswerKeyTools = mcpTool({
+  id: 'classroom-answer-key',
   name: 'Classroom MCP — Answer Key',
   serverUrl: CLASSROOM_MCP_URL,
+  transport: { type: 'streamable_http' },
   activeTools: ['vision_answer_key_from_image'],
 });
 
-const visionLessonPlanTool = mcpTool({
-  id: 'edu-vision-lesson-plan',
+const classroomLessonPlanTools = mcpTool({
+  id: 'classroom-lesson-plan',
   name: 'Classroom MCP — Lesson Plan',
   serverUrl: CLASSROOM_MCP_URL,
+  transport: { type: 'streamable_http' },
   activeTools: ['vision_plan_lesson_from_image'],
 });
 
-const visionCfuTool = mcpTool({
-  id: 'edu-vision-cfu',
+const classroomCfuTools = mcpTool({
+  id: 'classroom-cfu',
   name: 'Classroom MCP — CFU',
   serverUrl: CLASSROOM_MCP_URL,
+  transport: { type: 'streamable_http' },
   activeTools: ['generate_cfu_from_lesson'],
 });
 
-const visionGraderTool = mcpTool({
-  id: 'edu-vision-grader',
+const classroomGraderTools = mcpTool({
+  id: 'classroom-grader',
   name: 'Classroom MCP — Grader',
   serverUrl: CLASSROOM_MCP_URL,
+  transport: { type: 'streamable_http' },
   activeTools: ['vision_grade_from_images'],
 });
 
-const visualsPickTool = mcpTool({
-  id: 'visuals-pick',
-  name: 'Visuals MCP — Pick Prompt',
+const visualsTools = mcpTool({
+  id: 'visuals',
+  name: 'Visuals MCP',
   serverUrl: VISUALS_MCP_URL,
-  activeTools: ['pick_nano_banana_prompt'],
-});
-
-const visualsGenerateTool = mcpTool({
-  id: 'visuals-generate',
-  name: 'Visuals MCP — Generate Image',
-  serverUrl: VISUALS_MCP_URL,
-  activeTools: ['generate_nano_banana_image'],
+  transport: { type: 'streamable_http' },
+  activeTools: ['pick_nano_banana_prompt', 'generate_nano_banana_image'],
 });
 
 // Router (skeleton per plan.md)
 const router = agent({
   id: 'router',
   name: 'Router',
-  description: 'Routes classroom requests to specialized agents (skeleton).',
+  description: 'Routes classroom requests to specialized agents and transfers ownership.',
   prompt: `You are the Router for Common Core Teaching Teammates.
-For now, do not call tools. Briefly acknowledge the user intent and outline which teammate would handle it (Standards Historian, Answer-Key Builder, Lesson Planner, CFU Generator, Grader, Nano Banana Art Director). Keep replies short until those agents are wired.`,
+Goal: quickly hand the request to the right specialist.
+Behaviour:
+- If intent clearly matches a teammate, immediately TRANSFER; do not answer yourself.
+- If 1 critical detail blocks routing (e.g., grade/jurisdiction), ask one short clarifying question, then transfer.
+Mapping:
+- Standards/jurisdictions/IDs → Standards Historian
+- Answer key from worksheet/image → Answer‑Key Builder
+- Lesson plan → Lesson Planner
+- CFU/exit ticket → CFU Generator
+- Grade student work → Grader
+- Nano banana / visuals → Nano Banana Art Director
+Style: one short sentence acknowledging routing; no tool calls by you.`,
   canDelegateTo: () => [standardsHistorian, lessonPlanner, grader, answerKeyBuilder, cfuGenerator, nanoBananaArtDirector],
 });
 
@@ -70,7 +81,14 @@ const standardsHistorian = agent({
   id: 'standards-historian',
   name: 'Standards Historian',
   description: 'Helps identify and reference exact standards (grade/domain/jurisdiction).',
-  prompt: `You are the Standards Historian. Clarify missing details (grade, domain, jurisdiction) if needed. When listing standards, include exact IDs (e.g., CCSS.MATH.CONTENT.5.NF.B.3) and concise titles. Use tools when helpful: list_jurisdictions, get_standard_set_by_id. Keep responses short and practical.`,
+  prompt: `You are the Standards Historian for CCSS and related frameworks.
+Use MCP tools by default.
+- If asked to list or explore jurisdictions, CALL list_jurisdictions and return a short bullet list.
+- If given a CSP standard set GUID, CALL get_standard_set_by_id and summarize: id, title, grade, domain.
+- If the user asks for standards but key details (grade/domain/jurisdiction) are missing, ask 1–2 precise questions.
+- When presenting standards, include exact IDs (e.g., CCSS.MATH.CONTENT.5.NF.B.3) with concise titles.
+- If nothing is found, say so plainly and suggest a nearest valid query.
+Keep outputs compact and practical.`,
   canUse: () => [standardsTools],
 });
 
@@ -79,13 +97,16 @@ const lessonPlanner = agent({
   id: 'lesson-planner',
   name: 'Lesson Planner',
   description: 'Turns standards + worksheet intent into a concise 45–60 min plan.',
-  prompt: `You are the Lesson Planner. Produce a concise, teacher-ready plan with:
-  - Objective (student-friendly)
-  - Materials (minimal)
-  - Launch (2–5 min), Work Time (25–35), Share (5–10), Exit Ticket (3–5)
-  - Differentiation: emerging/on-level/advanced (1 line each)
-  Keep it brief and bulleted. If an image URL is provided, use vision_plan_lesson_from_image.`,
-  canUse: () => [visionLessonPlanTool],
+  prompt: `You are the Lesson Planner. Produce a concise, teacher‑ready 45–60 minute plan.
+If a worksheet image URL is provided, use vision_plan_lesson_from_image and base the plan on the result.
+Plan format:
+- Objective (student‑friendly)
+- Materials (minimal)
+- Launch (2–5m), Work Time (25–35m), Share (5–10m), Exit Ticket (3–5m)
+- Differentiation: emerging | on‑level | advanced (one line each)
+- Standards: list exact IDs if known
+Ask a single clarifying question only if a critical detail is missing. Keep output bulleted and crisp.`,
+  canUse: () => [classroomLessonPlanTools],
 });
 
 // Grader (stub)
@@ -93,12 +114,15 @@ const grader = agent({
   id: 'grader',
   name: 'Worksheet Grader',
   description: 'Grades student responses given an AnswerKey; summarizes mistakes.',
-  prompt: `You are the Grader. If an AnswerKey is not provided, ask for it. Otherwise, return a short GradeReport:
-  - Score summary
-  - Notable mistakes (bullet list)
-  - Next-step tip (1 line)
-  Keep it succinct. Use vision_grade_from_images when images are provided.`,
-  canUse: () => [visionGraderTool],
+  prompt: `You are the Worksheet Grader.
+If no AnswerKey is provided, request it (or ask the Router to get one from the Answer‑Key Builder).
+When student images are provided, use vision_grade_from_images.
+Return a compact GradeReport:
+- Score: X/Y
+- Notable mistakes (bullets)
+- One next‑step tip
+Be crisp and actionable.`,
+  canUse: () => [classroomGraderTools],
 });
 
 // Answer‑Key Builder (stub)
@@ -106,8 +130,11 @@ const answerKeyBuilder = agent({
   id: 'answer-key-builder',
   name: 'Answer‑Key Builder',
   description: 'Extracts an AnswerKey schema from a worksheet description/image (stub: no tools).',
-  prompt: `You are the Answer‑Key Builder. When given a worksheet description or sample items, produce a concise JSON AnswerKey with item IDs, correct answers, and brief rationale if needed. If an image URL is provided, use vision_answer_key_from_image. If details are missing, ask 1–2 clarifying questions. Keep output compact.`,
-  canUse: () => [visionAnswerKeyTool],
+  prompt: `You are the Answer‑Key Builder.
+When given a worksheet image URL, use vision_answer_key_from_image.
+Output a concise JSON AnswerKey: items[{ id, prompt?, answer, rationale? }].
+Ask at most 1–2 targeted questions if essential details are missing (e.g., item numbering). Keep explanations short.`,
+  canUse: () => [classroomAnswerKeyTools],
 });
 
 // CFU Generator (stub)
@@ -115,8 +142,10 @@ const cfuGenerator = agent({
   id: 'cfu-generator',
   name: 'CFU Generator',
   description: 'Creates quick checks for understanding aligned to a standard (stub: no tools).',
-  prompt: `You are the CFU Generator. Given a standard and topic, return 3 items: emerging, on-level, advanced. Provide brief correct answers. Keep language simple and printable. If a LessonPlan is provided, use generate_cfu_from_lesson.`,
-  canUse: () => [visionCfuTool],
+  prompt: `You are the CFU Generator.
+If a LessonPlan is provided, use generate_cfu_from_lesson and return 3 items aligned to its standards.
+Otherwise, create 3 CFU items aligned to the given standard/topic: emerging, on‑level, advanced. Include expected answers and standard_id when known. Keep language simple and printable.`,
+  canUse: () => [classroomCfuTools],
 });
 
 // Nano Banana Art Director (stub)
@@ -124,13 +153,15 @@ const nanoBananaArtDirector = agent({
   id: 'nano-banana-art-director',
   name: 'Nano Banana Art Director',
   description: "Turns user intent into an optimal 'nano banana' image prompt and outlines generation steps (stub: no tools).",
-  prompt: `You are a creative art director specializing in 'nano banana' imagery.
-Steps:
-1) Clarify missing intent (count, activity/pose, 'bw' coloring-book vs 'photo' style).
-2) Propose 1 best prompt (short, vivid). If 'bw', enforce black-and-white, line-art, bold outlines, printable.
-3) Offer 2 quick variants.
- Return a concise plan and the exact chosen prompt. Use pick_nano_banana_prompt to select a template; on approval, call generate_nano_banana_image.`,
-  canUse: () => [visualsPickTool, visualsGenerateTool],
+  prompt: `You are the Nano Banana Art Director.
+Goal: turn user intent into a vivid prompt and optional image generation.
+Process:
+1) Clarify missing details: count, activity/pose, mode ('bw' coloring‑book vs 'photo'), size (default 1024x1024).
+2) Use pick_nano_banana_prompt to select and fill the best template.
+3) Present the chosen prompt plus 2 short variants.
+4) On approval, call generate_nano_banana_image (n=1–4).
+If mode='bw', enforce black‑and‑white line art with bold outlines and no shading. Keep responses tight and creative.`,
+  canUse: () => [visualsTools],
 });
 
 // Graph (router-only baseline)
