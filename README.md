@@ -2,6 +2,41 @@
 
 An Inkeep Agent Framework project with multi-service architecture.
 
+## Purpose & Vision
+
+- Goal: help teachers and parents teach students. A Router agent analyzes the user’s request and hands it to the best specialist (standards, planning, grading, CFU, visuals) so the right workflow runs with minimal friction.
+- Built on Inkeep Agents so the same graph can run locally or on the platform with status updates, tool calls, and clear separation of concerns.
+
+## How It Works (Inkeep)
+
+- Uses `@inkeep/agents-sdk` to define an Agent Graph in `src/default/common-core-agents.graph.ts`.
+- Agents Run API executes the graph and streams status updates; Agents Manage API stores configuration.
+- Tools connect to Model Context Protocol (MCP) servers (standards, classroom, visuals) to keep model prompts clean and push integration logic to tools.
+
+## Agents & Routing
+
+- Router: determines intent and transfers to the appropriate specialist with one-line acknowledgments.
+- Standards Historian: lists jurisdictions and fetches exact CCSS identifiers using the Standards MCP.
+- Answer‑Key Builder: turns a worksheet image/description into a concise JSON AnswerKey.
+- Lesson Planner: creates a 45–60 minute, teacher‑ready plan.
+- CFU Generator: produces 3 differentiated checks for understanding aligned to standards.
+- Grader: grades student work against an AnswerKey and summarizes mistakes.
+- Nano Banana Art Director: picks a prompt and optionally generates visuals for playful activities.
+
+## UI (Separate Repo)
+
+The UI for this project lives here: https://github.com/andyrewlee/common-core-agents-ui
+
+- Chat with the agent team, upload assets, and view streaming status updates.
+- This backend repo defines the graph and connectors; the UI repo focuses on the user experience.
+
+## MCP Status (Submission Note)
+
+- We removed live MCP servers last minute due to technical issues in the hackathon environment.
+- The intended server implementations and design notes are here: https://github.com/andyrewlee/common-core-mcp-servers
+- Connectors remain defined in the graph for future wiring (Standards, Classroom, Visuals).
+
+
 ## Architecture
 
 This project follows a workspace structure with the following services:
@@ -124,3 +159,10 @@ Once services are running, view the OpenAPI documentation:
 ### Agents won't respond
 
 1. Ensure that the Agents Run API is running and includes a valid Anthropic or OpenAI API key in its .env file
+
+## Roadmap
+
+- Properly hook up MCP servers (Standards, Classroom, Visuals) using stateless HTTP transport and verify health in the dashboard.
+- End‑to‑end assets: reliable image upload from the UI, worksheet vision parsing, grading from photos, and image generation (Visuals MCP).
+- Tighter status components tailored to classroom workflows (lesson progress, grading counts, art generation status).
+- One‑command local demo and deployment scripts for hackathon judges and educators.
