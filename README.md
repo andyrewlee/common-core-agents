@@ -8,7 +8,7 @@ An Inkeep Agent Framework project with multi-service architecture.
 
 ## Purpose & Vision
 
-- Goal: help teachers and parents teach students. A Router agent analyzes the user’s request and hands it to the best specialist (standards, planning, grading, CFU, visuals) so the right workflow runs with minimal friction.
+- Goal: help teachers and parents teach students. A Router agent analyzes the user’s request and hands it to the best specialist (standards, planning, grading, CFU) so the right workflow runs with minimal friction.
 - Built on Inkeep Agents so the same graph can run locally or on the platform with status updates, tool calls, and clear separation of concerns.
 
 ## How It Works (Inkeep)
