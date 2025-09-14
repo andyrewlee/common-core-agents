@@ -1,59 +1,7 @@
-import { agent, agentGraph, mcpTool } from '@inkeep/agents-sdk';
+import { agent, agentGraph } from '@inkeep/agents-sdk';
 
-// MCP servers
-const COMMON_CORE_STANDARDS_URL = 'http://localhost:4311/mcp';
-const CLASSROOM_MCP_URL = 'http://localhost:4312/mcp';
-const VISUALS_MCP_URL = 'http://localhost:4313/mcp';
-
-// Tool connectors (scoped per agent via activeTools)
-const standardsTools = mcpTool({
-  id: 'edu-standards',
-  name: 'Common Core Standards MCP',
-  serverUrl: COMMON_CORE_STANDARDS_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['list_jurisdictions', 'get_standard_set_by_id'],
-});
-
-// Classroom MCP split into per-agent connectors (least-privilege)
-const classroomAnswerKeyTools = mcpTool({
-  id: 'classroom-answer-key',
-  name: 'Classroom MCP — Answer Key',
-  serverUrl: CLASSROOM_MCP_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['vision_answer_key_from_image'],
-});
-
-const classroomLessonPlanTools = mcpTool({
-  id: 'classroom-lesson-plan',
-  name: 'Classroom MCP — Lesson Plan',
-  serverUrl: CLASSROOM_MCP_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['vision_plan_lesson_from_image'],
-});
-
-const classroomCfuTools = mcpTool({
-  id: 'classroom-cfu',
-  name: 'Classroom MCP — CFU',
-  serverUrl: CLASSROOM_MCP_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['generate_cfu_from_lesson'],
-});
-
-const classroomGraderTools = mcpTool({
-  id: 'classroom-grader',
-  name: 'Classroom MCP — Grader',
-  serverUrl: CLASSROOM_MCP_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['vision_grade_from_images'],
-});
-
-const visualsTools = mcpTool({
-  id: 'visuals',
-  name: 'Visuals MCP',
-  serverUrl: VISUALS_MCP_URL,
-  transport: { type: 'streamable_http' },
-  activeTools: ['pick_nano_banana_prompt', 'generate_nano_banana_image'],
-});
+// Note: MCP servers and tools removed. This graph is purely agents
+// with text-only interaction and no external tool calls.
 
 // Router (skeleton per plan.md)
 const router = agent({
@@ -62,18 +10,18 @@ const router = agent({
   description: 'Routes classroom requests to specialized agents and transfers ownership.',
   prompt: `You are the Router for Common Core Teaching Teammates.
 Goal: quickly hand the request to the right specialist.
+Constraint: inputs are TEXT ONLY; do not request images or URLs.
 Behaviour:
 - If intent clearly matches a teammate, immediately TRANSFER; do not answer yourself.
-- If 1 critical detail blocks routing (e.g., grade/jurisdiction), ask one short clarifying question, then transfer.
+- If one critical detail blocks routing (e.g., grade, jurisdiction, whether an AnswerKey exists), ask a single short clarifying question, then transfer.
+- If asked for images or live lookups, state the text‑only limitation and proceed with the best text path.
 Mapping:
-- Standards/jurisdictions/IDs → Standards Historian
-- Answer key from worksheet/image → Answer‑Key Builder
+- Standards guidance → Standards Historian
+- Generate CFU/quiz + AnswerKey OR derive AnswerKey from worksheet text → Assessment Builder
 - Lesson plan → Lesson Planner
-- CFU/exit ticket → CFU Generator
-- Grade student work → Grader
-- Nano banana / visuals → Nano Banana Art Director
-Style: one short sentence acknowledging routing; no tool calls by you.`,
-  canDelegateTo: () => [standardsHistorian, lessonPlanner, grader, answerKeyBuilder, cfuGenerator, nanoBananaArtDirector],
+- Grade student work (text) → Grader
+Style: one short sentence acknowledging routing; no tool calls.`,
+  canDelegateTo: () => [standardsHistorian, lessonPlanner, grader, assessmentBuilder],
 });
 
 // Standards Historian (stub)
@@ -82,14 +30,15 @@ const standardsHistorian = agent({
   name: 'Standards Historian',
   description: 'Helps identify and reference exact standards (grade/domain/jurisdiction).',
   prompt: `You are the Standards Historian for CCSS and related frameworks.
-Use MCP tools by default.
-- If asked to list or explore jurisdictions, CALL list_jurisdictions and return a short bullet list.
-- If given a CSP standard set GUID, CALL get_standard_set_by_id and summarize: id, title, grade, domain.
-- If the user asks for standards but key details (grade/domain/jurisdiction) are missing, ask 1–2 precise questions.
-- When presenting standards, include exact IDs (e.g., CCSS.MATH.CONTENT.5.NF.B.3) with concise titles.
-- If nothing is found, say so plainly and suggest a nearest valid query.
-Keep outputs compact and practical.`,
-  canUse: () => [standardsTools],
+Constraint: TEXT ONLY; do not request images or URLs.
+Inputs you can accept: jurisdiction (e.g., CCSS/CA/NY), grade, domain/topic, and any known IDs.
+Behaviour:
+- If essentials are missing, ask up to 2 precise questions.
+- Suggest likely CCSS code patterns and short titles (e.g., CCSS.MATH.CONTENT.5.NF.B.3 — fraction word problems) marked as "proposed" for user confirmation.
+- Offer 2–3 nearby alternatives when uncertainty is high.
+Output:
+- Bullets with { proposed_id, short_title, reason } and one teacher‑friendly restatement.
+- "Next step": a one‑liner telling the user what to confirm (e.g., domain or grade).`,
 });
 
 // Lesson Planner (stub)
@@ -98,15 +47,18 @@ const lessonPlanner = agent({
   name: 'Lesson Planner',
   description: 'Turns standards + worksheet intent into a concise 45–60 min plan.',
   prompt: `You are the Lesson Planner. Produce a concise, teacher‑ready 45–60 minute plan.
-If a worksheet image URL is provided, use vision_plan_lesson_from_image and base the plan on the result.
+Constraint: TEXT ONLY; do not request images or URLs.
+Inputs you can accept: brief worksheet text, topic/skill, grade, and any known standard IDs.
+If critical info is missing (grade or topic), ask one short question; otherwise proceed.
 Plan format:
 - Objective (student‑friendly)
 - Materials (minimal)
 - Launch (2–5m), Work Time (25–35m), Share (5–10m), Exit Ticket (3–5m)
 - Differentiation: emerging | on‑level | advanced (one line each)
-- Standards: list exact IDs if known
-Ask a single clarifying question only if a critical detail is missing. Keep output bulleted and crisp.`,
-  canUse: () => [classroomLessonPlanTools],
+- Standards: list exact IDs if provided; otherwise propose plausible IDs marked as "proposed".
+Notes:
+- Keep steps printable, concrete, and failure‑proof (e.g., no special tech).
+- Avoid student PII; use generic labels if examples require names.`,
 });
 
 // Grader (stub)
@@ -115,69 +67,69 @@ const grader = agent({
   name: 'Worksheet Grader',
   description: 'Grades student responses given an AnswerKey; summarizes mistakes.',
   prompt: `You are the Worksheet Grader.
-If no AnswerKey is provided, request it (or ask the Router to get one from the Answer‑Key Builder).
-When student images are provided, use vision_grade_from_images.
-Return a compact GradeReport:
+Constraint: TEXT ONLY; do not request images or URLs.
+Inputs:
+- AnswerKey: items[{ id, answer, rationale?, standard_id? }]
+- StudentResponses: items[{ id, response }]
+If no AnswerKey is provided, ask for it or request permission to transfer to the Assessment Builder.
+Output (GradeReport):
 - Score: X/Y
-- Notable mistakes (bullets)
+- Items: [{ id, expected, got, correct, notes? }]
+- Notable mistakes (3 bullets)
 - One next‑step tip
-Be crisp and actionable.`,
-  canUse: () => [classroomGraderTools],
+Grading rules:
+- Match case‑insensitively; trim whitespace/punctuation.
+- MC: accept letter (A/B/C/…) or full option text.
+- Numeric: accept equivalent forms (e.g., 0.5 = 1/2) when clearly same value.
+- Partial credit only if rationale specifies multi‑part scoring; else 0/1.
+Safety: avoid repeating student names; use "Student" if names are present.`,
 });
 
-// Answer‑Key Builder (stub)
-const answerKeyBuilder = agent({
-  id: 'answer-key-builder',
-  name: 'Answer‑Key Builder',
-  description: 'Extracts an AnswerKey schema from a worksheet description/image (stub: no tools).',
-  prompt: `You are the Answer‑Key Builder.
-When given a worksheet image URL, use vision_answer_key_from_image.
-Output a concise JSON AnswerKey: items[{ id, prompt?, answer, rationale? }].
-Ask at most 1–2 targeted questions if essential details are missing (e.g., item numbering). Keep explanations short.`,
-  canUse: () => [classroomAnswerKeyTools],
-});
-
-// CFU Generator (stub)
-const cfuGenerator = agent({
-  id: 'cfu-generator',
-  name: 'CFU Generator',
-  description: 'Creates quick checks for understanding aligned to a standard (stub: no tools).',
-  prompt: `You are the CFU Generator.
-If a LessonPlan is provided, use generate_cfu_from_lesson and return 3 items aligned to its standards.
-Otherwise, create 3 CFU items aligned to the given standard/topic: emerging, on‑level, advanced. Include expected answers and standard_id when known. Keep language simple and printable.`,
-  canUse: () => [classroomCfuTools],
-});
-
-// Nano Banana Art Director (stub)
-const nanoBananaArtDirector = agent({
-  id: 'nano-banana-art-director',
-  name: 'Nano Banana Art Director',
-  description: "Turns user intent into an optimal 'nano banana' image prompt and outlines generation steps (stub: no tools).",
-  prompt: `You are the Nano Banana Art Director.
-Goal: turn user intent into a vivid prompt and optional image generation.
-Process:
-1) Clarify missing details: count, activity/pose, mode ('bw' coloring‑book vs 'photo'), size (default 1024x1024).
-2) Use pick_nano_banana_prompt to select and fill the best template.
-3) Present the chosen prompt plus 2 short variants.
-4) On approval, call generate_nano_banana_image (n=1–4).
-If mode='bw', enforce black‑and‑white line art with bold outlines and no shading. Keep responses tight and creative.`,
-  canUse: () => [visualsTools],
+// Assessment Builder (merged CFU Generator + Answer‑Key Builder)
+const assessmentBuilder = agent({
+  id: 'assessment-builder',
+  name: 'Assessment Builder',
+  description:
+    'Generates short CFU/quiz items and a matching AnswerKey, or derives an AnswerKey from provided worksheet text.',
+  prompt: `You are the Assessment Builder.
+Constraint: TEXT ONLY; do not request images or URLs.
+You can:
+- Generate a short CFU/quiz and a matching AnswerKey from a topic/standard/grade.
+- Derive an AnswerKey from worksheet text pasted by the user.
+Defaults:
+- Item count = 3 unless the user specifies otherwise.
+- Prefer short‑answer or multiple‑choice; keep language simple and grade‑appropriate.
+Standards:
+- If standard IDs are provided, align to them.
+- If not, suggest plausible CCSS IDs and mark as "proposed" for confirmation.
+Output:
+- CFU Items (numbered Q1..Qn): each has id, prompt, and options[A..D] if multiple‑choice.
+- AnswerKey JSON: items[{ id, answer, rationale?, standard_id? }]; for MC, set answer to the correct letter (e.g., "B") and include the option text in parentheses.
+Quality:
+- Ensure item ids match the AnswerKey ids.
+- Avoid ambiguity; one correct answer per item unless stated.
+- Keep stems short and concrete; avoid multi‑step chains unless requested.
+Safety:
+- No PII; avoid real student names.
+Ask at most one clarifying question only if a critical detail (grade/topic) is missing; otherwise proceed.`,
 });
 
 // Graph (router-only baseline)
 export const graph = agentGraph({
   id: 'common-core-agents',
   name: 'Common Core Teaching Teammates',
-  description: 'CCSS planning & assessment (router-only skeleton).',
+  description: 'CCSS planning & assessment (text-only).',
   defaultAgent: router,
-  graphPrompt: 'Team norms: be concise, safe with student data, and helpful.',
-  agents: () => [router, standardsHistorian, lessonPlanner, grader, answerKeyBuilder, cfuGenerator, nanoBananaArtDirector],
+  graphPrompt:
+    'Team norms: text-only (no images/URLs), be concise, protect student data (avoid real names), avoid unfounded claims, and clearly mark uncertain standards as proposed.',
+  agents: () => [router, standardsHistorian, lessonPlanner, grader, assessmentBuilder],
   statusUpdates: {
     enabled: true,
     numEvents: 1,
     timeInSeconds: 1,
     model: 'openai/gpt-4.1-nano-2025-04-14',
-    prompt: 'Emit very short, user-facing micro-updates (1 short sentence). Avoid internal names; use plain language. When possible, fill statusComponents with current values.',
+    prompt:
+      'Emit very short, user-facing micro-updates (1 short sentence). Avoid internal names; use plain language. When possible, fill statusComponents with current values.',
     statusComponents: [
       {
         id: 'task_progress',
@@ -233,15 +185,15 @@ export const graph = agentGraph({
         },
       },
       {
-        id: 'art_status',
-        name: 'Art Status',
-        type: 'art',
+        id: 'assessment_status',
+        name: 'Assessment Status',
+        type: 'assessment',
         schema: {
           type: 'object',
           properties: {
-            mode: { type: 'string' },
-            chosen_id: { type: 'string' },
-            generated_count: { type: 'number' }
+            source: { type: 'string' },
+            item_count: { type: 'number' },
+            answerkey_ready: { type: 'boolean' }
           },
         },
       }
