@@ -47,5 +47,18 @@ export const weatherGraph = agentGraph({
   id: 'weather-graph',
   name: 'Weather graph',
   defaultAgent: weatherAssistant,
+  statusUpdates: {
+    enabled: true,
+    // Emit an update after every event (tool call, generation, transfer)
+    numEvents: 1,
+    // Also emit time-based updates for longer operations (max chatty)
+    timeInSeconds: 1,
+    // Use a fast model for summaries so frequent updates stay snappy
+    model: 'openai/gpt-4.1-nano-2025-04-14',
+    // Keep updates short and human-friendly
+    prompt:
+      'Write concise, user-facing progress updates (1 short sentence). Avoid internal agent/tool names; use plain language like "looking up coordinates", "fetching forecast", "summarizing results". Mention the location when known.',
+    // If you want structured components later, add statusComponents here.
+  },
   agents: () => [weatherAssistant, weatherForecaster, geocoderAgent],
 });
